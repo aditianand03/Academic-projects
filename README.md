@@ -73,11 +73,21 @@ Developed a credit risk framework for assessing default risk and expected credit
 
 I’m a data scientist with expertise in:
 
-- Energy transition modeling and net-zero pathways  
-- Financial risk modeling (ECL, PD, Monte Carlo)  
-- Natural language applications with LLMs
+⚡ Energy transition modeling and net-zero strategy
 
-📍 Based in Australia | 🌐 Freelance-friendly | 🛠 Always building
+💨 Emissions modeling across sectors (forestry, energy, industrial)
+
+📊 Sustainability reporting aligned with global frameworks (NZAM, SBTi)
+
+💰 Financial risk modeling (ECL, PD, Monte Carlo simulations)
+
+🧠 Natural language applications using Large Language Models (LLMs)
+
+I help clients turn raw datasets into actionable insights—whether for reaching net-zero targets, quantifying financial exposure, or automating intelligence with language models.
+
+📍 Based in Australia | 🌐 Open to freelance/remote projects | 🛠 Proficient in R, Python, SQL, Power BI
+
+
 
 🔗 [LinkedIn](https://www.linkedin.com/in/aditianand03/)
 ---
