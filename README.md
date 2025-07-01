@@ -79,7 +79,7 @@ I’m a data scientist with expertise in:
 
 📍 Based in Australia | 🌐 Freelance-friendly | 🛠 Always building
 
-🔗 [LinkedIn](https://www.linkedin.com/in/aditi-anand/) 
+🔗 [LinkedIn](https://www.linkedin.com/in/aditianand03/)
 ---
 
 ## 📄 License
