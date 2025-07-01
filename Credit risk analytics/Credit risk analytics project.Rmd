@@ -1,0 +1,453 @@
+---
+title: "Cracking the credit default : Predicting Mortgage Loan Risks with Precision"
+author: "Aditi Anand"
+output: 
+ pdf_document:
+    toc: true
+    toc_depth: 2
+    keep_tex: true
+always_allow_html: true
+---
+
+[**Introduction:**]{.underline}
+
+In the financial services sector, particularly within mortgage lending, accurately predicting loan defaults is essential for minimizing risk and maintaining portfolio health. Defaults can lead to substantial financial losses and disrupt financial markets and economic stability. Given the everevolving lending landscape, influenced by fluctuating interest rates, changing economic conditions, and varying borrower behaviors, lenders must employ advanced techniques to foresee and manage defaults.
+
+Predictive modeling, especially logistic regression, has emerged as a powerful tool for predicting default probabilities. By analyzing borrower attributes like credit scores, loan-to-value ratios, debt to income ratios, and delinquency status, lenders can identify key risk factors and take preemptive measures to reduce losses. By examining these factors, the model seeks to pinpoint the most significant predictors of default. The study also tackles challenges like class imbalance and multicollinearity, refining the model to enhance its accuracy and relevance for lending institutions.
+
+[**Current study:**]{.underline}
+
+1.  **orig_rt (Original Interest Rate)**: Higher interest rates could be associated with greater risk, especially in times of economic stress.
+
+2.  **orig_trm (Original Loan Term)**: The term of the loan impacts repayment schedules and can influence default likelihood.
+
+3.  **oltv (Original Loan-to-Value Ratio)**: High LTV ratios are typically riskier, as they indicate the borrower has less equity in the property.
+
+4.  **LAST_RT (Last Interest Rate)**: Changes in interest rates could indicate adjustments in payments, impacting the likelihood of default.
+
+5.  **F30_DTE, F60_DTE(Delinquency Dates)**: These indicate when the loan became delinquent, which is crucial for tracking the progress toward foreclosure.
+
+6.  **RELO_FLG (Relocation Flag)**: Mortgages issued for relocation purposes may carry different risks, especially if the borrower’s employment situation is unstable.
+
+7.  **MOD_FLAG (Modification Flag)**: Indicates if the loan has been modified, which could signal previous financial distress.
+
+8.  **CSCORE_B (Borrower Credit Score at Origination)**: This is crucial in assessing the borrower’s ability to repay the loan.
+
+9.  **dti (Debt-to-Income Ratio)**: Measures the borrower’s debt burden relative to income, a critical factor in determining the ability to make payments.
+
+Credit score of borrowers had multiple NA values so such rows were removed from the dataset.The 30 and 60 days delinquency were converted to binary variable wherein the loans which had delinquency were allocated 1 whereas others as 0. The relocation variable was converted to binary variable with Yes as 1 and No as 0. For the ease of analysis, all these variables were converted to numeric variables.
+
+**The status of mortgage loan is an important variable which is a resultant of borrower's details. However, it is converted to binary variable to make more informed decision making. The lenders can classify the loans by at the very onset as it reflects the default at the very onset.**
+
+\
+**The categorisation is done as follows:\
+1 = Default**: Include loans with:
+
+**Delinquency** (codes "1" to "9" indicating months of delinquency).
+
+**Foreclosure/Distressed Sales** (codes "F", "S", "T", "N", "L", "R" indicate various forms of distress like Deed-in-Lieu, Short Sale, etc.).
+
+**0 = Non-default**: Include loans that are:
+
+**Current or Paid Off** (code "C" for current, "P" for prepaid/matured).
+
+For first round of analysis, 9 potential predictors which looked the most suitable according to subject matter knowledge were taken. These variables could have an impact on the likelihood of default however the computation of variables was done to perform correlation analysis between the response variable and covariates.
+
+[**Key Findings:**]{.underline}
+
+Most of the selected variables showed a weak positive correlation which suggests that these variables influence response variables. However, borrower's credit score and the current outstanding unpaid balance shows a negative correlation with response.
+
+**Borrower's credit score negative relationship with response variables suggests that an increase in credit score will lead to lower likelihood of loan default.**
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(pROC)
+# Suppress messages for all loaded packages
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(lattice))
+suppressPackageStartupMessages(library(pROC))
+suppressPackageStartupMessages(library(data.table))
+# Load the dataset (replace 'your_dataset.csv' with your actual file path)
+loans_data <- read.csv('fannie_mae.csv')
+
+
+
+# Select the relevant columns
+subset_data <- loans_data[, c('orig_rt', 'orig_trm', 'oltv', 'dti', 'MOD_FLAG', 'LAST_RT', 'F30_DTE', 'F60_DTE', 'relo_flg', 'CSCORE_B', 'LAST_STAT')]
+
+# Step 2: Drop rows where CSCORE_B is NA
+subset_data <- subset_data[!is.na(subset_data$CSCORE_B), ]
+
+# Step 3: Display or use the cleaned subset
+subset_data$F30_DTE <- ifelse(is.na(subset_data$F30_DTE), 0, 1)
+
+# Step 2: Replace NA values with 0 and other values with 1 for F60_DTE
+subset_data$F60_DTE <- ifelse(is.na(subset_data$F60_DTE), 0, 1)
+
+subset_data$relo_flg <- ifelse(subset_data$relo_flg == "Y", 1, 0)
+
+# Create a binary default_flag: 1 = Default, 0 = Non-default
+subset_data$default_flag <- ifelse(subset_data$LAST_STAT %in% c("1", "2", "3", "4", "5", "6", "7", "8", "9", "F", "S", "T", "N", "L", "R"), 1, 0)
+
+# Drop the LAST_STAT column from the dataset
+subset_data <- subset(subset_data, select = -LAST_STAT)
+
+# Step 1: Ensure all relevant columns are numeric
+# (Convert any factors or characters to numeric if needed)
+subset_data$relo_flg <- as.numeric(subset_data$relo_flg)
+subset_data$MOD_FLAG <- as.numeric(subset_data$MOD_FLAG)
+subset_data$default_flag <- as.numeric(subset_data$default_flag)
+subset_data$dti <- ifelse(is.na(subset_data$dti), mean(subset_data$dti, na.rm = TRUE), subset_data$dti)
+
+# Step 3: Ensure that dti and LAST_UPB are numeric after handling missing values
+subset_data$dti <- as.numeric(subset_data$dti)
+
+
+# Step 2: Select only the numeric columns for correlation analysis
+numeric_columns <- subset_data[, sapply(subset_data, is.numeric)]
+
+# Step 3: Generate the correlation matrix
+correlation_matrix <- cor(numeric_columns)
+# Step 4: Round the correlation values to 2 decimal places
+correlation_matrix_rounded <- round(correlation_matrix, 2)
+
+library(corrplot)
+# Step 1: Generate the correlation matrix (same as above)
+correlation_matrix <- cor(numeric_columns)
+
+# Step 2: Visualize the correlation matrix using a heatmap
+corrplot(correlation_matrix, method = "color", type = "upper", 
+         tl.col = "black", tl.srt = 45, 
+         addCoef.col = "black", number.cex = 0.7)
+```
+
+Categorical variables like MOD_FLAG, F30_DTE, F60_DTE, relo_flg have an imbalance hence 0 is set as a reference category as it has higher frequency, this makes the interpretation of model coefficients relatively easier and makes model more stable.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(gridExtra)  # For arranging multiple plots
+suppressPackageStartupMessages(library(gridExtra))
+suppressMessages(library(gridExtra))
+# Bar plot for MOD_FLAG
+p1 <- ggplot(subset_data, aes(x = factor(MOD_FLAG))) + 
+  geom_bar(fill = "#4DAF4A", color = "black") + 
+  labs(title = "Modification Flag", x = "MOD_FLAG", y = "Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+        axis.title = element_text(face = "bold", size = 14))
+
+# Bar plot for F30_DTE
+p2 <- ggplot(subset_data, aes(x = factor(F30_DTE))) + 
+  geom_bar(fill = "#377EB8", color = "black") + 
+  labs(title = "30 Days Delinquent Flag", x = "F30_DTE", y = "Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+        axis.title = element_text(face = "bold", size = 14))
+
+# Bar plot for F60_DTE
+p3 <- ggplot(subset_data, aes(x = factor(F60_DTE))) + 
+  geom_bar(fill = "#E41A1C", color = "black") + 
+  labs(title = "60 Days Delinquent Flag", x = "F60_DTE", y = "Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+        axis.title = element_text(face = "bold", size = 14))
+
+# Bar plot for relo_flg
+
+p4 <- ggplot(subset_data, aes(x = factor(relo_flg))) + 
+  geom_bar(fill = "#984EA3", color = "black") + 
+  labs(title = "Relocation Flag", x = "relo_flg", y = "Count") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+        axis.title = element_text(face = "bold", size = 14))
+
+# Arrange the plots in a grid
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+
+
+subset_data$MOD_FLAG <- relevel(factor(subset_data$MOD_FLAG), ref = "0")
+subset_data$F30_DTE <- relevel(factor(subset_data$F30_DTE), ref = "0")
+subset_data$F60_DTE <- relevel(factor(subset_data$F60_DTE), ref = "0")
+subset_data$relo_flg <- relevel(factor(subset_data$relo_flg), ref = "0")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Load necessary libraries
+library(knitr)
+library(kableExtra)
+suppressMessages(library(htmltools))
+suppressMessages(library(rmarkdown))
+suppressMessages(library(kableExtra))
+
+# List of categorical variables to include in Chi-square tests
+categorical_vars <- c("MOD_FLAG", "F30_DTE", "F60_DTE", "relo_flg")
+
+# Create an empty list to store results
+chi_square_results <- list()
+
+# Loop through pairs of variables and perform Chi-square test
+for (i in 1:(length(categorical_vars) - 1)) {
+  for (j in (i + 1):length(categorical_vars)) {
+    var1 <- categorical_vars[i]
+    var2 <- categorical_vars[j]
+    
+    # Perform Chi-square test between the two variables
+    chi_test <- chisq.test(table(subset_data[[var1]], subset_data[[var2]]))
+    
+    # Store results in a list
+    chi_square_results[[paste(var1, "vs", var2)]] <- list(
+      variable1 = var1,
+      variable2 = var2,
+      p_value = chi_test$p.value,
+      statistic = chi_test$statistic,
+      df = chi_test$parameter
+    )
+  }
+}
+
+# Convert the list to a data frame
+chi_square_table <- do.call(rbind, lapply(chi_square_results, as.data.frame))
+
+# Format p-values for better readability (optional)
+chi_square_table$p_value <- formatC(chi_square_table$p_value, format = "e", digits = 2)
+
+# Display the table using kableExtra for styling
+kable(chi_square_table, col.names = c("Variable 1", "Variable 2", "P-Value", "Statistic", "Degrees of Freedom"), align = 'c') %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive")) %>%
+  row_spec(0, bold = TRUE) %>%  # Bold the header row
+  column_spec(3, bold = TRUE, color = "blue")  # Highlight the p-values column
+
+
+```
+
+On chisq test, it was seen **both the 30 days and 60 days delinquency shows an association with loan modification or relocation suggesting that loans in which borrowers makes some kind of change in payment structure/address could be potential default accounts. Moreover, the loans who are 30 days delinquent often are escalated to 60 days delinquent as well.**
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#Step 1: Create individual histograms for continuous variables
+p1 <- ggplot(subset_data, aes(x = orig_rt)) + geom_histogram(binwidth = 0.1, fill = "skyblue", color = "black") + ggtitle("Original Interest Rate")
+p2 <- ggplot(subset_data, aes(x = orig_trm)) + geom_histogram(binwidth = 10, fill = "lightgreen", color = "black") + ggtitle("Original Loan Term")
+p3 <- ggplot(subset_data, aes(x = oltv)) + geom_histogram(binwidth = 5, fill = "coral", color = "black") + ggtitle("Original Loan-to-Value Ratio")
+p4 <- ggplot(subset_data, aes(x = dti)) + geom_histogram(binwidth = 1, fill = "purple", color = "black") + ggtitle("Debt-to-Income Ratio")
+p5 <- ggplot(subset_data, aes(x = LAST_RT)) + geom_histogram(binwidth = 0.1, fill = "yellow", color = "black") + ggtitle("Last Interest Rate")
+p6 <- ggplot(subset_data, aes(x = CSCORE_B)) + geom_histogram(binwidth = 20, fill = "lightblue", color = "black") + ggtitle("Borrower Credit Score")
+
+# Step 2: Combine the plots into a grid
+grid.arrange(p1, p2, p3, p4, p5, p6, ncol = 2)
+```
+
+The numerical variables shows:
+
+-   Original loan term (orig_trm): Most of the loans had values concentrated at 360 i.e. 30-year mortgages and years were more generic like 120, 180, 240, 360 hence the numeric variable is converted to categorical variable with loan term greater than 240 as long-term loans and loan term lesser than 240 as short-term loans. The long-term loans were set as reference category.
+
+-   For oltv, CSCORE_B and dti, log transformation is applied to compress the tails of these variables making it appropriate for fitting the model. However, there is still some skewness in that data.
+
+-   Orig_rt and LAST_RT shows an approximate normal distribution.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Step 1: Apply Z-score normalization to CSCORE_B
+subset_data$CSCORE_log <- log(subset_data$CSCORE_B)
+
+# Step 2: Apply log transformation to dti and oltv
+# Add 1 to avoid issues with log(0) for both dti and oltv
+subset_data$log_dti <- log(subset_data$dti + 1)
+subset_data$log_oltv <- log(subset_data$oltv + 1)
+
+# Step 3: Plot the transformed variables to check their distributions
+
+# Plot log transformed CSCORE
+p11 <- ggplot(subset_data, aes(x = CSCORE_log)) + 
+  geom_histogram(binwidth = 0.1, fill = "lightblue", color = "black") + 
+  ggtitle("Log transformed Borrower Credit Score (CSCORE_B)")
+
+# Plot log-transformed dti
+p12 <- ggplot(subset_data, aes(x = log_dti)) + 
+  geom_histogram(binwidth = 0.1, fill = "purple", color = "black") + 
+  ggtitle("Log Transformed Debt-to-Income Ratio (dti)")
+
+# Plot log-transformed oltv
+p13 <- ggplot(subset_data, aes(x = log_oltv)) + 
+  geom_histogram(binwidth = 0.1, fill = "coral", color = "black") + 
+  ggtitle("Log Transformed Original Loan-to-Value Ratio (oltv)")
+
+# Step 4: Arrange the plots in a grid
+library(gridExtra)
+grid.arrange(p11, p12, p13, ncol = 1)
+
+```
+
+**Model building:**
+
+The dataset had high level of imbalance and logistic regression model gives a bias towards the class with higher frequency. Therefore, assigning weights to minority classes prevent the skewness in the model. This resulted in improved model performance and more informed decision making to avoid major losses.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Categorize orig_trm as Short-term or Long-term
+subset_data$loan_term_category <- ifelse(subset_data$orig_trm <= 240, "Short-term", "Long-term")
+suppressPackageStartupMessages(library(car))
+# Convert to factor for easier analysis
+subset_data$loan_term_category <- factor(subset_data$loan_term_category)
+
+subset_data$loan_term_category <- relevel(subset_data$loan_term_category, ref = "Long-term")
+
+
+
+# Higher weight for the minority class (default_flag == 1)
+subset_data <- subset_data %>%
+  mutate(weight = ifelse(default_flag == 1, 6, 1))
+# Logistic regression model
+logit_model <- glm(default_flag ~ orig_rt + log_dti + log_oltv + MOD_FLAG + LAST_RT + 
+                     F30_DTE + F60_DTE + relo_flg + CSCORE_log + loan_term_category, 
+                   data = subset_data, family = binomial,weights = weight)
+
+# Loading necessary library
+library(car)
+
+# Calculate VIF for the GLM model
+vif_values <- vif(logit_model)
+
+# Create a data frame for easy visualization
+vif_df <- data.frame(
+  Variable = names(vif_values),
+  VIF = vif_values
+)
+
+# Display the VIF values
+library(knitr)
+library(kableExtra)
+
+vif_df %>%
+  kable("html", col.names = c("Variable", "VIF Value"), align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+
+
+```
+
+Earlier, correlation plot showed that Orig_rt and LAST_RT has a high correlation of 0.99. After fitting the GLM model and computing Variation Inflation factor (VIF), it was seen that orig_rt and LAST_RT have VIF greater than 5 suggesting multicollinearity. Therefore orig_rt with higher VIF was removed from the dataset to avoid overfitting and inflated standard errors.\
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+
+logit_model_1 <- glm(default_flag ~  + log_dti + log_oltv + MOD_FLAG + LAST_RT + 
+                     F30_DTE + F60_DTE + relo_flg + CSCORE_log + loan_term_category, 
+                   data = subset_data, family = binomial,weights = weight)
+
+# Visualizing the coefficients
+library(ggplot2)
+
+coef_df <- data.frame(
+  term = rownames(coef(summary(logit_model_1))),
+  estimate = coef(summary(logit_model_1))[, "Estimate"],
+  p_value = coef(summary(logit_model_1))[, "Pr(>|z|)"]
+)
+
+# Filter out intercept for better readability
+coef_df <- coef_df[coef_df$term != "(Intercept)", ]
+
+ggplot(coef_df, aes(x = reorder(term, estimate), y = estimate)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Impact of Key Predictors on Default Risk",
+    x = "Predictor",
+    y = "Coefficient Estimate"
+  )
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# Load necessary library
+library(pROC)
+
+suppressMessages({
+# Generate predicted probabilities from the logistic regression model
+predicted_probs <- predict(logit_model_1, type = "response")
+
+# Generate ROC curve and calculate AUC
+roc_curve <- roc(subset_data$default_flag, predicted_probs)
+
+# Plot ROC curve
+plot(roc_curve, main = "ROC Curve for Default Risk Model", col = "blue", lwd = 2)
+
+# Add AUC value to the plot
+auc_value <- auc(roc_curve)
+text(0.6, 0.4, paste("AUC =", round(auc_value, 3)), col = "red", cex = 1.2)
+})
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+
+# Load necessary libraries
+library(caret)
+library(kableExtra)
+
+# Generate predicted classes (using a 0.5 threshold)
+predicted_classes <- ifelse(predicted_probs > 0.5, 1, 0)
+
+# Create confusion matrix
+confusion_matrix <- confusionMatrix(factor(predicted_classes), factor(subset_data$default_flag))
+
+# Extract accuracy
+accuracy <- confusion_matrix$overall['Accuracy']
+
+# Extract confusion matrix table
+cm_table <- as.table(confusion_matrix$table)
+
+# Create a table with confusion matrix and accuracy
+cm_matrix <- matrix(c(cm_table[1], cm_table[3], cm_table[2], cm_table[4]), 
+                    nrow = 2, byrow = TRUE, 
+                    dimnames = list('Actual' = c('Non-default', 'Default'), 
+                                    'Predicted' = c('Non-default', 'Default')))
+
+# Display the confusion matrix and accuracy in an aesthetic way using kableExtra
+kable(cm_matrix, caption = "Confusion Matrix for Default Risk Model") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width = F) %>%
+  add_header_above(c(" " = 1, "Predicted" = 2)) %>%
+  footnote(general = paste("Accuracy:", round(accuracy, 4)))
+
+```
+
+The final model suggests:
+
+*"Borrowers who are into delinquency (30 days or 60 days) have high chances of default. Moreover, 30 days delinquency is more conclusive than 60 days as it indicates imminent default in the loan. It can be concluded that borrowers who slipped into 30 days past due category could be potential defaulters in future and should be added to flagged loans. "*
+
+*"Credit score is a crucial indicator of default risk and indicates that lower credit scores are associated with higher likelihood of default. Hence, it is an essential factor to quantify the creditworthiness of the borrower."*
+
+*"The loans which are modified like changing the address, repaying plans, etc are more likely to default. It could be an outcome of financial hardship and economic loss, making them more prone to missing future payments and slipping into defaults."*
+
+*"The last interest rate has an impact on the likelihood of default. The reason is that higher interest rates can influence the borrower's financial condition leading to delay in payments. However, this is an economy driven factor and not specific to borrowers. It should be addressed from the lender's perspective and store a buffer to account for economy shifts like inflation. It could involve making expected credit loss (ECL) models to analyse the risk factors and decide the buffer. "*
+
+*"The loan-to-value ratio is also a significant predictor of default. The loan-to-value ratio measures the amount of the property value that is financed by the loan. If the borrowers hold less equity in the property, it can lead to lack of incentives to pay back either due to financial hardship or economic value of the property. "*
+
+*"The debt-to-income ratio has slight effect indicating that increase in the ratio leads to decrease in likelihood of default. However, it is not a significant factor affecting the lender. "*
+
+*"The short-term loans have slightly lower likelihood of default compared to long-term loans. "*
+
+\
+**Overall, the model is really effective with an accuracy of 97.95% in predicting the default status. The confusion matrix shows that 1539 cases were correctly classified as default and 410,106 loans were correctly classified as non-default.**
+
+[**Implications:**]{.underline}
+
+The model findings demonstrates a real-world lending scenario which is helpful for the lenders to develop risk mitigation strategies and perform buffer modelling.\
+\
+Delinquency is an important predictor to flag the loans at early stages. This is a sign to prepare for early intervention like restructuring of loans or closer monitoring.
+
+Credit scores should be considered as a prerequisite to lending as it gives a clear picture of borrowers lending behaviour and helps to mitigate future losses.
+
+Loan-modifications could be a potential red flag borrower, hence allocation resources towards such loans could add significant value to the lenders risk portfolio.
+
+At a firm level, the lenders should conduct a periodic macroeconomic shifts analysis to manage the loan portfolios. Most organisations during COVID failed to tackle the losses due to lack of resources and expertise in credit loss modelling. This led to major loss for big lenders during moratorium on loans.
+
+The financial indicators like Loan to value and debt to income ratios helps the organisation predict the user behaviour and offer less risky loans.
+
+[**Conclusion:**]{.underline}
+
+This analysis shows the power of predictive modelling in identifying the crucial factors that could impact a lending institution. With an accuracy of about 97%, the model allows the lenders to take early measures and act as a reliable tool to classify loans.
+
+Future research:
+
+The dataset was limited to housing market; however this kind of analysis could be done for other areas like auto loans or personal loans. The analysis can be further extended to include more detailed information of lender like employment history which can result in more granular decision making
